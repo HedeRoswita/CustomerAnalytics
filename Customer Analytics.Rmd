@@ -1,0 +1,710 @@
+---
+title: "Customer Analytics"
+author: "Roswita Hede"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Objective: 
+The objective of the project outlined in the R script is to analyze customer data to uncover trends and patterns that may contribute to a higher rate of delayed deliveries. Additionally, the project aims to utilize machine learning algorithms to develop the most effective model for predicting whether shipments reach customers on time.
+```{r}
+#Load the required packages.
+library(tidyverse) #data manipulation
+library(ggplot2) #data visualization
+
+#Set working directory where dataset is located.
+#setwd("C:\Users\Roswita Hede\Documents\Practice\R\Customer Analytic")
+
+#Import the dataset.
+df <- read.csv("train.csv")
+
+#create a copy of the dataset.
+df1 <- df
+head(df1,5)
+```
+
+1. Data Cleaning and Preparation
+
+```{r}
+#structure and summary of the dataset
+str(df1)
+summary(df1)
+#remove ID column.
+df1$ID <- NULL
+#rename variables.
+names(df1) <- c("warehouseblock", "modeofshipment", "customercarecalls", "customerrating", "costoftheproduct", "priorpurchase", "productimportance", "gender", "discountoffered", "weightingrams", "reachedontime")
+```
+
+
+```{r}
+#calculate number of unique levels 
+length(unique(df1$priorpurchase))
+length(unique(df1$customercarecalls))
+length(unique(df1$customerrating))
+length(unique(df1$reachedontime))
+
+#Change variable as factor
+df1$reachedontime <- as.factor(df1$reachedontime)
+df1$priorpurchase <- as.factor(df1$priorpurchase)
+df1$customercarecalls <- as.factor(df1$customercarecalls)
+df1$customerrating <- as.factor(df1$customerrating)
+
+```
+```{r}
+df1$reachedontime <-  ifelse(df1$reachedontime == "0", "Yes", "No")
+```
+
+```{r}
+#check for any missing values column-wise.
+colSums(is.na(df)) #No missing values in the dataset.
+sum(duplicated(df))
+distinct(df,ID,.keep_all = TRUE)
+
+#find Q1, Q3, and interquartile range for values in Discount_offered column
+Q1 <- quantile(df1$Discount_offered, .25)
+Q3 <- quantile(df1$Discount_offered, .75)
+IQR <- IQR(df1$Discount_offered)
+
+#subset data where Discount_offered value is outside 1.5*IQR of Q1 and Q3
+outliers <- subset(df1, df1$Discount_offered<(Q1 - 1.5*IQR) | df1$Discount_offered>(Q3 + 1.5*IQR))
+outliers
+```
+There is no missing values, duplicate values and outliers in the data
+
+2. Exploratory Data Analysis
+```{r}
+#The proportion of orders that deliverded ontime
+prop.table(table(df1$reachedontime))
+ 
+```
+```{r}
+# Load necessary libraries
+# Create a bar plot
+ggplot(df1, aes(x = factor(reachedontime), fill = factor(reachedontime))) +
+  geom_bar(width = 0.5) +
+  scale_fill_manual(values = c("red", "blue"), name = "Reach Ontime") +  
+  labs(x = "Reach On Time", y = "Frequency") +  # Adjust axis labels
+  ggtitle("Bar Plot of Reach On Time")
+
+```
+The bar graph shows that a higher percentage of orders—59.6% of orders are delayed, whereas 40.3% of orders are delivered ontime.
+
+```{r}
+#number of comapny's warehouse
+length(unique(df1$warehouseblock))
+
+#Total cost of product for the 5 warehouse
+sum(df1$costoftheproduct) 
+
+# average of customer spend on company's product (number of customer: 10999)
+avgCustomerSpend<-2311955/10999
+avgCustomerSpend
+```
+The total cost that the company spend on the product is approximately 2.3 million dollars, customer spend $210.19 on average on each product
+
+
+```{r}
+# Get column names of categorical variables (including character variables)
+categorical_columns <- names(df1)[sapply(df1, function(x) is.factor(x) | is.character(x))]
+
+# Iterate through each categorical variable and create a bar plot
+for (col in categorical_columns) {
+  # Create a bar plot
+  p <- ggplot(df1, aes(x = !!sym(col), fill = !!sym(col))) +
+    geom_bar() +
+    scale_fill_discrete(name = col) +  # Set legend title
+    labs(x = col, y = "Frequency") +  # Adjust axis labels
+    ggtitle(paste("Bar Plot of", col))  # Adjust plot title
+  
+  # Print the plot
+  print(p)
+}
+```
+
+
+
+Data insight:
+-  Warehouse F emerges as the top-performing distribution center, outstripping the other four warehouses in terms of product sales. Despite all five warehouses catering to similar markets, Warehouse F has significantly higher sales figures. 
+- The company predominantly utilizes shipping as the preferred mode of transportation over air and road for product distribution. This insight implies a strategic choice based on cost-effectiveness, volume capacity, or perhaps the nature of the products being transported. 
+- The analysis reveals a notable pattern in product purchases based on their importance levels. Low importance products are the most frequently purchased, followed by medium importance products, with high importance products being the least purchased.
+- A significant portion of customers have made prior purchases consisting of three products.
+
+Since warehouse F have shipped most product, I will looking specifically on this warehouse.
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Calculate revenue generated based on warehouse
+warehouseRevenue <- df1 %>%
+  group_by(warehouseblock) %>%
+  summarise(revenue = sum(costoftheproduct))
+
+# Plotting the bar graph
+ggplot(warehouseRevenue, aes(x = warehouseblock, y = revenue, fill = warehouseblock)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Gross Revenue Generated by Warehouse",
+       x = "Warehouse",
+       y = "Revenue", caption ="Warehouse block F have the highest gross revenue" ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+
+#Warehouse and reached on time.
+xtabs(~ warehouseblock + reachedontime, data = df1)
+# Evaluate the delivery time based on warehouse blocks
+ggplot(df1, aes(warehouseblock)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime") +  
+  labs(title = "Warehouse block and reached on-time", x = "Warehouse blocks") 
+```
+Warehouse Block F stands out as the top performer in terms of product sales, accounting for the highest number of products sold. However, data reveals that 59.8% of the products from Warehouse Block F were not delivered on time to the customers, representing the highest percentage among all warehouses. Meanwhile, the remaining warehouse blocks exhibit nearly equal occurrences of delayed and on-time deliveries.
+
+```{r}
+#Evaluate the delivery time based on prior purchase
+ggplot(df1, aes(priorpurchase)) + geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Prior purchase and reached on-time", x = "Number of Prior purchases") 
+
+```
+Customers who have previously purchased three products received the highest number of both on-time and delayed deliveries.
+
+```{r}
+# Evaluate the delivery time based on Customer rating
+ggplot(df1, aes(customerrating)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Customer rating and reached on-time", x = "Customer rating") 
+```
+
+Across five different rating levels, ranging from 1 (lowest) to 5 (highest), a similar number of customers experienced both delayed and on-time product deliveries. Notably, customers rated at level 3 constitute the highest proportion among those receiving both delayed and on-time deliveries. the highest incidence of delayed deliveries is observed among customers rated at level 1, indicating that those with the lowest satisfaction rating experience the most delays in receiving their products.
+```{r}
+#Warehouse and reached on time.
+xtabs(~productimportance  + reachedontime, data = df1)
+# Evaluate the delivery time based on Product importance
+ggplot(df1, aes(productimportance)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Product importance and reached on-time", x = "Product importance") 
+```
+Low-importance products exhibit the highest occurrence of both delayed and on-time deliveries, with the highest proportion of products being delivered delayed to the customer, accounted for 60%. 
+while high-importance products encounter the lowest frequency in both categories. This suggests a consistent pattern where the urgency or priority level of the product inversely correlates with its delivery performance.
+
+```{r}
+# Evaluate the delivery time based on gender
+ggplot(df1, aes(gender)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Gender and reached on-time", x = "Gender") 
+```
+
+```{r}
+#mode of shipment and reached on time.
+xtabs(~modeofshipment  + reachedontime, data = df1)
+# Evaluate the delivery time based on modeof shipment
+ggplot(df1, aes(modeofshipment)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Mode of shipment and reached on-time", x = "Mode of shipment") 
+```
+Products delivered by ship exhibit the highest occurrence in both on-time and delayed delivery and 59.7% were delayed while the alternative modes of shipment (Flight and Road) share a relatively similar proportion of deliveries
+
+```{r}
+# Evaluate the delivery time based on Customer care calls
+ggplot(df1, aes(customercarecalls)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Number of Customer care calls and reached on-time", x = "Customer care calls") 
+```
+Customers who engage with customer care services by making four inquiries regarding their shipments receive the highest proportion of products delivered both delayed and ontime. Conversely, customers who make seven calls to customer care exhibit the lowest proportion of both delayed and on-time deliveries. This situation may indicate underlying issues with the shipment process or dissatisfaction leading to repeated inquiries, resulting in a lower overall delivery performance.
+
+Interestingly, customers who make fewer calls to customer care, specifically only two times, experience a lower proportion of on-time delivery products. This finding could imply that these customers may encounter issues that are not promptly addressed due to their lower level of engagement with customer care services.
+
+```{r}
+library(psych)
+#Categorizing the discounts group
+describe(df1$discountoffered)#65 unique discount categories
+df1$discount_group[df1$discountoffered <=15 & df1$discountoffered>= 1] <- "1" #lowest
+df1$discount_group[df1$discountoffered <= 30 & df1$discountoffered >15] <- "2"
+df1$discount_group[df1$discountoffered <= 45 & df1$discountoffered >30] <- "3"
+df1$discount_group[df1$discountoffered <= 50 & df1$discountoffered >45] <- "4"
+df1$discount_group[df1$discountoffered <= 65 & df1$discountoffered >50] <- "5" #highest
+df1$discount_group <- as.factor(df1$discount_group)
+
+```
+
+```{r}
+#Warehouse and reached on time.
+xtabs(~discount_group  + reachedontime, data = df1)
+# Evaluate the delivery time based on Customer care calls
+ggplot(df1, aes(discount_group)) +geom_bar(aes(fill = reachedontime), position = "dodge") + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime")) +  
+  labs(title = "Discount group and reached on-time",subtitle  = "1 indicates Lowest discount category and 5 indicates highest",  x = "Discount Group") 
+```
+
+The observed trend indicates that products offered with smaller discounts, equal to or less than 15%, display a 51% on-time delivery rate and are the only products consistently delivered on time to the customer. Conversely, products with discounts exceeding 15% appear to be consistently delivered delayed.
+
+
+Problem Statement :
+Why is "ship" the most frequently chosen mode of shipment by customers?
+
+Analysis:
+From our previous visualizations, we observed that the majority of products are shipped via "ship," and it also boasts the highest rate of on-time delivery compared to "road" and "flight." Based on these insights, I hypothesize that customers prefer to choose "ship" as their mode of shipment due to three main factors: product weight, cost and discount.
+
+
+```{r}
+
+
+# Evaluate the discount group based on mode of shipment
+ggplot(df1, aes(discount_group)) +geom_bar(aes(fill = modeofshipment), position = "dodge") + scale_fill_manual(values=c("blue","green","maroon"),name = "Mode of shipment", labels = c("Ship", "Road","Flight")) +  
+  labs(title = "Discount group and Mode of Shipment",subtitle  = "1 indicates Lowest discount category and 5 indicates highest",  x = "Discount Group") 
+```
+```{r}
+# Evaluate the Costumer rating based on mode of shipment
+ggplot(df1, aes(customerrating)) +geom_bar(aes(fill = modeofshipment), position = "dodge") + scale_fill_manual(values=c("blue","green","maroon"),name = "Mode of shipment", labels = c("Ship", "Road","Flight")) +  
+  labs(title = "Customer Rating and Mode of Shipment",  x = "Customer Rating") 
+
+
+```
+
+
+```{r}
+#calculate median weight for the 3 mode of transportation
+#Use median since the variable weightgrams has skewed distribution
+median_prod_weight <- df1 %>%
+  group_by(modeofshipment) %>%
+  summarize(average_weight = median(weightingrams, na.rm = TRUE))
+
+# Print the result
+print(median_prod_weight)
+
+#calculate average cost for the 3 mode of transportation
+average_prod_cost <- df1 %>%
+  group_by(modeofshipment) %>%
+  summarize(average_cost = mean(costoftheproduct, na.rm = TRUE))
+
+# Print the result
+print(average_prod_cost)
+
+# Define a custom function to calculate mode
+calculate_mode <- function(x) {
+  unique_x <- unique(x)
+  unique_x[which.max(tabulate(match(x, unique_x)))]
+}
+
+# Calculate mode of discountoffered based on modeofshipment
+mode_discount <- df1 %>%
+  group_by(modeofshipment) %>%
+  summarize(mode_discountoffered = calculate_mode(discountoffered))
+
+# Print the result
+print(mode_discount)
+```
+
+```{r}
+# Calculate correlations
+correlation1 <- cor(df1$costoftheproduct, df1$weightingrams)
+correlation2 <- cor(df1$costoftheproduct, df1$discountoffered)
+
+# Print correlations
+print(paste("Correlation between cost and weight of product is:", correlation1))
+print(paste("Correlation between cost of the product and discount offered is:", correlation2))
+
+```
+Based on the analysis, factors such as discount rates, product weight, and cost did not significantly influence the popularity of shipping methods, particularly with ship. The average cost of products across all three shipment modes was approximately $209, with weight of around 9.15 pounds. Interestingly, flights offered more discounts compared to other modes of shipment, with mostly 4% off discounts. Flights appear to be potentially the most favorable mode of shipment overall for all levels of customer rating. Additionally, further evaluation revealed a small correlation between the variables of cost, weight, and discount. This suggests that while these factors may play a role in shipment decisions, they do not strongly dictate the choice of shipping method.
+
+
+Problem statement 2:
+Why customer choose low importance product? are any influence of discount and price?
+
+```{r}
+#Evaluate the influence of discount on the product importance
+xtabs(~discount_group  + productimportance, data = df1)
+#calculate mode of discount based on the product importance
+mode_productimportance_discount <- df1 %>%
+  group_by(productimportance) %>%
+  summarize(mode_discountoffered = calculate_mode(discountoffered))
+print(mode_productimportance_discount)
+
+#calculate median of price based on the product importance
+
+median_price <- df1 %>%
+  group_by(productimportance) %>%
+  summarize(median_product_cost = median(costoftheproduct))
+print(median_price)
+
+#Calculate the number of customer who get 65% off based on the product importance
+high_discount <- df1 %>%
+  group_by(productimportance) %>%
+  summarize(count = sum(discountoffered == 65, na.rm = TRUE))
+high_discount
+
+```
+
+Despite being categorized as low-importance products, our analysis reveals that they have the highest median price compared to medium and high-importance products. This suggests that customers perceive these items as offering exceptional value or unique features, driving their preference despite their lower priority. Additionally, many customers may prefer low-importance products due to the discounts offered. Our analysis shows that low-importance products typically receive higher discount rates, with the majority of discounts being around 10%. In contrast, medium and high-importance products tend to offer lower discounts, averaging around 8% and 1%, respectively. Moreover, from our dataset of 10,999 customers, it's noteworthy that 13 customers who bought low-importance products received a substantial discount of 65%. This insight underscores the importance of understanding customer perceptions of value and the influence of pricing strategies on purchasing decisions.
+
+
+Problem Statement 3: 
+For best customer who have higher rating (rated 3 or higher), made repeated order (prior purchase more than 4), buy expensive product.
+
+```{r}
+#filter good customer (customer rating>=3 with prior purchase >=4)
+good_rating<-df1 %>% filter(as.numeric(customerrating)>=3 & as.numeric(priorpurchase)>=4)
+
+#Visualize the finding
+graph1 <- ggplot(good_rating, aes(reachedontime))  + geom_bar(aes(fill = reachedontime))
+graph1 + scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime"))+scale_x_discrete(labels = c("Delayed", "Ontime"))+
+  labs(title = "Have shipments reached on time for customers with a good rating?", subtitle = "Identified customers who were rated 3 and higher and prior purchade more than equal 4", x = "Reached on time", y = "No of customers", caption = "") + geom_text(stat = "count",aes(label = ..count..), vjust = 3, size =  9)
+```
+Based on the analysis, despite customers having higher ratings and making prior purchases of more than 4 items, the delivery rate is only 44.8%, which is unexpectedly low considering their status as valued customers. The remaining 55.2% of customers did not receive their products on time.
+
+```{r}
+#Customer score
+#Average order value = Total Revenue / Total number of orders
+sum(df1$costoftheproduct) #2311955 (approx. 2.3 Million US dollars)
+averageordervalue <-2311955/10999
+print(paste("The average order is : $",averageordervalue))
+df1$customerscore <- averageordervalue * as.numeric(df1$priorpurchase)
+summary(df1$customerscore) #Median score is 420.4
+```
+Problem Statement 4
+Have customer with good scores received their products ontime?
+
+Based on the calculation, on average, customers spend $210.19. The customer scores are calculated by assigning a value to each customer based on two factors: their average order value and their frequency of purchases (prior purchase). Moreover, I classify a customer as valuable if their score is greater than the median customer score.
+
+```{r}
+valuable_customerscore <- df1 %>% filter(customerscore >= median(customerscore))
+prop.table(table(valuable_customerscore$reachedontime))
+
+```
+```{r}
+#Visualize the finding
+g2 <- ggplot(valuable_customerscore, aes(reachedontime)) + geom_bar(aes(fill = reachedontime))
+g2 +  scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime"))+scale_x_discrete(labels = c("Delayed", "Ontime"))+labs(title = "Have shipments reached on time for customers with a good score?", subtitle = "good customer have score equal to and greater than the median score (420.4).", x = "Reached on time", y = "No of customers", caption = "About 41.21% of the customers received shipment on time") + geom_text(stat = "count",aes(label = ..count..), vjust = 3, size =  9)
+```
+A customer is considered to have a good customer score if they have a score higher than the median customer score. The analysis shows that 41.21% of customers with a good score get their product on time, which is very low compared to the delayed rate, which accounted for 58.78%.
+
+```{r}
+#identify customers who make the highest payment
+max_payment<-max(df1$costoftheproduct) 
+min_payment<-min(df1$costoftheproduct) 
+
+print(paste("The highest price that the customer pays: $",max_payment))
+print(paste("The lowest price that the customer pays: $",min_payment))
+
+median_value <- median(df1$costoftheproduct)
+median_value 
+
+
+#identify the customers who made payments greater than or equal to the median value and prior purchase >=6
+highest_payments <- df1 %>% filter(costoftheproduct >= median_value & as.numeric(priorpurchase)>=6)
+prop.table(table(highest_payments$reachedontime))
+```
+```{r}
+g3 <- ggplot(highest_payments, aes(reachedontime)) + geom_bar(aes(fill = reachedontime))
+g3 +  scale_fill_manual(values=c("red","green"),name = "Reach Ontime", labels = c("Delayed", "Ontime"))+scale_x_discrete(labels = c("Delayed", "Ontime"))+labs(title = "Have shipments reached on time for customers that made highest payment and make recurring order?", subtitle = "Customer who made payment more than $214 and prior order more than equal 6 products", x = "Reached on time", y = "No of customers", caption = "About 37.09% of the customers received shipment on time") + geom_text(stat = "count",aes(label = ..count..), vjust = 3, size =  9)
+```
+Based on the analysis, despite customers making recurring orders and prior purchases of six or more products, along with purchasing higher-priced items, only 37.09% of these valuable customers received their packages on time. This on-time delivery rate is considerably low, highlighting potential challenges or inefficiencies in the delivery process that need to be addressed.
+
+3. Classification Model
+
+The aim of this project is to predict whether a product will be delivered on time. Before applying a classification model, I will conduct one-hot and label encoding to handle categorical variables in the dataset. Additionally, I will perform standardization to eliminate scale effects on the model and ensure unbiased results.
+
+```{r}
+library(dplyr)
+data<-df
+#remove ID column.
+data$ID <- NULL
+#rename variables.
+names(data) <- c("warehouseblock", "modeofshipment", "customercarecalls", "customerrating", "costoftheproduct", "priorpurchase", "productimportance", "gender", "discountoffered", "weightingrams", "reachedontime")
+
+#change data type as ordinal variable
+data$reachedontime <- as.factor(data$reachedontime)
+data$priorpurchase <- as.numeric(as.factor(data$priorpurchase))
+data$customercarecalls <- as.numeric(as.factor(data$customercarecalls))
+data$customerrating <- as.numeric(as.factor(data$customerrating))
+# Map product importance levels to numeric values
+data <- data %>% mutate(productimportance = recode(productimportance,"low" = 1,
+                                    "medium" = 2,"high" = 3))
+data$productimportance<-as.numeric(as.factor(data$productimportance))
+
+```
+
+
+```{r}
+#perform one hot encoding to warehouseblock
+dummy_1 <- data.frame(model.matrix(~warehouseblock-1, data = data))
+data<-cbind(data[,-1],dummy_1)
+```
+
+```{r}
+#perform one hot encoding to modeofshipment
+dummy_2 <- data.frame(model.matrix(~modeofshipment-1, data = data))
+data<-cbind(data[,-1],dummy_2)
+
+```
+
+```{r}
+#perform one hot encoding to gender
+dummy_3 <- data.frame(model.matrix( ~gender-1, data = data))
+data<-cbind(data[,-6],dummy_3)
+```
+
+
+```{r}
+#performing standardization to numerical variable discountoffered, weightingrams, and costoftheproduct 
+
+data$discountoffered<- scale(data$discountoffered)
+data$weightingrams<- scale(data$weightingrams)
+data$costoftheproduct<- scale(data$costoftheproduct)
+```
+
+
+```{r}
+# Loading package
+library(caret)
+#split dataset into train and test data. The latter is for validation purpose.
+set.seed(1234)
+train_index <- createDataPartition(data$reachedontime, p = 0.8, list = FALSE)
+train_data <- data[train_index, ]
+test_data <- data[-train_index, ]
+```
+
+1. Logistic Regression
+
+```{r}
+# Loading package
+library(caTools)
+library(ROCR)
+# Training model
+logistic_model <- glm(reachedontime ~ ., data = train_data, family = binomial(link = "logit"))
+summary(logistic_model)
+ 
+```
+
+```{r}
+predict_reg <- predict(logistic_model,
+                       test_data[,-8], type = "response")
+pre_lr <- ifelse(predict_reg>0.5, 1, 0)
+
+cm_lr    <- confusionMatrix(data= as.factor(as.numeric(predict_reg >= 0.5)), reference = test_data$reachedontime, positive = "0")
+cm_lr
+cc_lr <- table(pre_lr, test_data$reachedontime)
+#classification accuracy
+lr_acc <- sum(diag(cc_lr))/sum(cc_lr)
+print(paste("The logistic regression model is", (round(lr_acc, digits = 4))*100, "%", "accurate and has"
+            , (1-(round(lr_acc, digits = 4)))*100, "%", "error rate"))
+```
+
+
+2. Random Forest
+
+
+```{r}
+# Data Partition
+library(randomForest)
+
+learn_rf <- randomForest(reachedontime~., data = train_data, ntree=100)
+pre_rf   <- predict(learn_rf, newdata = test_data)
+cm_rf    <- confusionMatrix(pre_rf, test_data$reachedontime)
+cm_rf
+cc_rf <- table(pre_rf, test_data$reachedontime)
+#classification accuracy
+rf_acc <- sum(diag(cc_rf))/sum(cc_rf)
+print(paste("The random forest model is", (round(rf_acc, digits = 4))*100, "%", "accurate and has"
+            , (1-(round(rf_acc, digits = 4)))*100, "%", "error rate"))
+```
+
+```{r}
+#control <- trainControl(method="repeatedcv", number=5, repeats=2,search="random")
+#set.seed(seed)
+#mtry <- sqrt(ncol(train_data[,-8]))
+#rf_random <- train(reachedontime~., data=train_data, method="rf",  tuneLength=5, trControl=control)
+
+#prediction_rf_random   <- predict(rf_gridsearch, newdata = test_data)
+#cc_rf_random <- table(prediction_rf_random, test_data$reachedontime)
+#classification accuracy
+#rf_random_acc <- sum(diag(cc_rf))/sum(cc_rf)
+#print(paste("The random forest model is", (round(rf_random_acc, digits = 4))*100, "%", "accurate and has"
+         #   , (1-(round(rf_random_acc, digits = 4)))*100, "%", "error rate"))
+
+```
+
+
+
+
+3. Decision Tree
+```{r}
+library(party)
+#Decision tree
+learn_dt <- ctree(reachedontime~., data=train_data, 
+                  controls=ctree_control(maxdepth=7))
+pre_dt   <- predict(learn_dt, newdata = test_data)
+pre_dt <- as.factor(pre_dt)
+cm_ct    <- confusionMatrix(pre_dt, test_data$reachedontime)
+cm_ct
+
+cc_dt <- table(pre_dt, test_data$reachedontime)
+#classification accuracy
+df_acc <- sum(diag(cc_dt))/sum(cc_dt)
+print(paste("The decision tree model is", (round(df_acc, digits = 4))*100, "%", "accurate and has"
+            , (1-(round(df_acc, digits = 4)))*100, "%", "error rate"))
+
+
+```
+Below, I will perform orunning on the decision tree model in order to avoid overfitting
+```{r}
+library(rpart)
+control <- rpart.control(minsplit=20, minbucket=5, maxdepth=20)
+dt_prune <- rpart(reachedontime ~ ., data = train_data, method="class", control=control)
+
+# Predict on the test set
+predictions_advanced <- predict(dt_prune, test_data, type = "class")
+
+pruned_tree <- prune(dt_prune, cp = 0.02)
+
+
+predictions_pruned <- predict(pruned_tree, test_data, type = "class")
+
+
+tab_dt_prune <- table(predictions_pruned, test_data$reachedontime)
+prune_acc <- sum(diag(tab_dt_prune)) / sum(tab_dt_prune)
+print(paste("The Pruning Decision Trees model is", round(prune_acc * 100, digits = 2), "% accurate and has",
++             round((1 - prune_acc) * 100, digits = 2), "% error rate"))
+```
+
+4. K Neirest Neighbors
+```{r}
+# Knn
+library(class)
+classifier_knn <- knn( train_data[,-8], test_data[,-8],cl = train_data[,8], k=10)
+##create confusion matrix
+ tab <- table(classifier_knn,test_data$reachedontime)
+ 
+ ##this function divides the correct predictions by total number of predictions that tell us how accurate teh model is.
+
+knn_acc <- sum(diag(tab))/sum(tab)
+print(paste("The K Neirest Neighbors model is", (round(knn_acc, digits = 4))*100, "%", "accurate and has"
+            , (1-(round(knn_acc, digits = 4)))*100, "%", "error rate"))
+```
+
+5. Support Vector Machine
+
+```{r}
+#SVM
+library(e1071)
+learn_svm<-svm(reachedontime~., data=train_data,type = 'C-classification',kernel = 'linear')
+pre_svm<-predict(learn_svm, newdata=test_data[,-8])
+svm_rf<-table(pre_svm, test_data$reachedontime)
+#classification accuracy
+svm_acc<-sum(diag(svm_rf))/sum(svm_rf)
+
+print(paste("The Support Vector model is", (round(svm_acc, digits = 4))*100, "%", "accurate and has"
+            , (1-(round(svm_acc, digits = 4)))*100, "%", "error rate"))
+
+```
+6. Tuned Support Vector Machine
+
+```{r}
+# Fix gamma
+gamma <- 0.01
+
+# Reduced parameter space for cost
+cost <- 2^3  # Adjust the range as needed
+
+accuracy2 <- numeric()
+
+for (i in 1:length(cost)) {
+  learn_svm <- svm(reachedontime ~ ., data = train_data, gamma = gamma, cost = cost[i])
+  pre_svm <- predict(learn_svm, test_data[, -8])
+  accuracy1 <- confusionMatrix(pre_svm, test_data$reachedontime)
+  accuracy2[i] <- accuracy1$overall[1]
+}
+
+opt_cost <- cost[which.max(accuracy2)]
+
+learn_imp_svm <- svm(reachedontime ~ ., data = train_data, cost = opt_cost, gamma = gamma)
+pre_imp_svm <- predict(learn_imp_svm, test_data[, -8])
+cm_imp_svm <- confusionMatrix(pre_imp_svm, test_data$reachedontime)
+cm_imp_svm
+imp_svm_rf <- table(pre_imp_svm, test_data$reachedontime)
+#classification accuracy
+imp_svm_acc <- sum(diag(imp_svm_rf)) / sum(imp_svm_rf)
+
+print(paste("The Tuned Support Vector model is", round(imp_svm_acc * 100, digits = 2), "% accurate and has",
+            round((1 - imp_svm_acc) * 100, digits = 2), "% error rate"))
+
+
+```
+
+
+```{r}
+# Create a dataframe for accuracy and error rate
+model_names <- c("Decision Tree", "Logistic Regression", "Random Forest", "KNN", "Support Vector", "Tuned Support Vector")
+accuracy <- c(prune_acc, lr_acc, rf_acc, knn_acc, svm_acc, imp_svm_acc)
+error_rate <- 1 - accuracy
+
+accuracy_df <- data.frame(Model = model_names, Accuracy = accuracy, Error_Rate = error_rate)
+
+# Print the dataframe
+print(accuracy_df)
+```
+```{r}
+
+library(RColorBrewer)
+
+# Define a color palette
+palette <- brewer.pal(8, "Set2")
+
+# Create a bar plot
+accuracy_barplot <- ggplot(accuracy_df, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Accuracy of Different Models",
+       x = "Model",
+       y = "Accuracy") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = palette)  # Use the defined color palette
+
+# Display the bar plot
+print(accuracy_barplot)
+```
+Decision tree demonstrates the highest accuracy in predicting whether a product will arrive on time to the customer.The model will be use on the new costumer data.
+
+```{r}
+#Now to predict if shipments reached on time or not using decision tree model on new data
+datatest <- read.csv("test.csv")
+
+#remove ID column.
+datatest$ID <- NULL
+#rename variables.
+names(datatest) <- c("warehouseblock", "modeofshipment", "customercarecalls", "customerrating", "costoftheproduct", "priorpurchase", "productimportance", "gender", "discountoffered", "weightingrams", "reachedontime")
+
+#change data type as ordinal variable
+datatest$reachedontime <- as.factor(datatest$reachedontime)
+datatest$priorpurchase <- as.numeric(as.factor(datatest$priorpurchase))
+datatest$customercarecalls <- as.numeric(as.factor(datatest$customercarecalls))
+datatest$customerrating <- as.numeric(as.factor(datatest$customerrating))
+# Map product importance levels to numeric values
+datatest <- datatest %>% mutate(productimportance = recode(productimportance,"low" = 1,
+                                    "medium" = 2,"high" = 3))
+datatest$productimportance<-as.numeric(as.factor(datatest$productimportance))
+
+
+#perform one hot encoding to warehouseblock
+dummy_1 <- data.frame(model.matrix(~warehouseblock-1, data = datatest))
+datatest<-cbind(datatest[,-1],dummy_1)
+
+#perform one hot encoding to modeofshipment
+dummy_2 <- data.frame(model.matrix(~modeofshipment-1, data = datatest))
+datatest<-cbind(datatest[,-1],dummy_2)
+
+
+#perform one hot encoding to gender
+dummy_3 <- data.frame(model.matrix( ~gender-1, data = datatest))
+datatest<-cbind(datatest[,-6],dummy_3)
+
+#performing standardization to numerical variable discountoffered, weightingrams, and costoftheproduct 
+
+datatest$discountoffered<- scale(datatest$discountoffered)
+datatest$weightingrams<- scale(datatest$weightingrams)
+datatest$costoftheproduct<- scale(datatest$costoftheproduct)
+
+
+pred_datatest <- predict(learn_dt, newdata = datatest)
+datatest$reachedontime <- NULL
+x<-as.numeric(pred_datatest)
+datatest$reachedontime <- round(exp(x)/(1 + exp(x)),digits = 0)
+head(datatest)
+```
+
